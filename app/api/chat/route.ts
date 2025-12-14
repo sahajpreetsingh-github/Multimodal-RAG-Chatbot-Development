@@ -65,11 +65,43 @@ export async function POST(req: NextRequest) {
     if (toolMatches.length > 0) {
       for (const match of toolMatches) {
         const toolName = match[1] as string;
-        const toolArgs = (match[2] as string).split(",").reduce((acc, arg) => {
-          const [key, value] = arg.split(":").map(s => s.trim());
-          acc[key] = value;
-          return acc;
-        }, {} as Record<string, string>);
+        const argsString = (match[2] as string).trim();
+        
+        // Parse tool arguments - support both formats:
+        // 1. Positional: [tool:arg1:arg2] (matches UI examples)
+        // 2. Named with commas: [tool:key1:value1,key2:value2]
+        let toolArgs: Record<string, string> = {};
+        
+        // Check if it contains commas (named arguments format)
+        if (argsString.includes(",")) {
+          // Named arguments: key1:value1,key2:value2
+          argsString.split(",").forEach(arg => {
+            const [key, ...valueParts] = arg.split(":").map(s => s.trim());
+            const value = valueParts.join(":"); // Rejoin in case value contains colons
+            if (key && value) {
+              toolArgs[key] = value;
+            }
+          });
+        } else {
+          // Positional arguments: arg1:arg2:arg3
+          // Map to tool-specific parameter names
+          const args = argsString.split(":").map(s => s.trim()).filter(s => s.length > 0);
+          
+          if (toolName === "web_search") {
+            // Single argument: query
+            toolArgs.query = args.length > 0 ? args.join(" ") : argsString;
+          } else if (toolName === "generate_ui_component") {
+            // Two arguments: component_type, description
+            toolArgs.component_type = args[0] || "";
+            // Join all args after the first as description (handles colons in description)
+            toolArgs.description = args.length > 1 ? args.slice(1).join(" ") : "";
+          } else if (toolName === "fetch_learning_data") {
+            // Two arguments: data_type, topic
+            toolArgs.data_type = args[0] || "";
+            // Join all args after the first as topic (handles colons in topic)
+            toolArgs.topic = args.length > 1 ? args.slice(1).join(" ") : "";
+          }
+        }
         
         const result = await executeTool(toolName, toolArgs);
         toolResults += `\n\nTool Result (${toolName}):\n${result}`;
